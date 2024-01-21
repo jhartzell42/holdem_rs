@@ -1,8 +1,10 @@
-use crate::cards::{Card, Rank};
+use crate::cards::{Card, CardParseError, Rank};
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::Display;
+use std::str::FromStr;
+use thiserror::Error;
 
 #[derive(Clone, Debug)]
 pub struct Hand([Card; 5]);
@@ -21,7 +23,7 @@ pub enum HandType {
 }
 
 impl Hand {
-    pub fn from(cards: [Card; 5]) -> Self {
+    pub fn from(cards: &[Card; 5]) -> Self {
         let mut cards = cards.to_vec();
         cards.sort_by(|a, b| b.cmp(a));
         Hand(cards.try_into().expect("size should be 5"))
@@ -69,17 +71,7 @@ impl Hand {
 
     fn is_flush(&self) -> bool {
         let suit = self.0[0].suit;
-        for card in &self.0 {
-            if suit != card.suit {
-                return false;
-            }
-        }
-        true
-    }
-
-    #[cfg(test)]
-    fn is_straight(&self) -> bool {
-        self.extract_straight().is_some()
+        self.0.iter().all(|card| suit == card.suit)
     }
 
     fn ranks(&self) -> [Rank; 5] {
@@ -131,7 +123,7 @@ impl Display for Hand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut output = "".to_string();
         let mut comma = false;
-        for card in &self.0 {
+        for card in self.cards() {
             if comma {
                 output.push_str(", ");
             }
@@ -142,6 +134,29 @@ impl Display for Hand {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum HandParseError {
+    #[error("error parsing card: {0}")]
+    CardParseError(#[from] CardParseError),
+
+    #[error("wrong number of elements: {0}")]
+    WrongNumberOfElements(usize),
+}
+
+impl FromStr for Hand {
+    type Err = HandParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let vec: Vec<_> = s.split(",").map(|s| s.parse::<Card>()).try_collect()?;
+        let size = vec.len();
+
+        match vec.try_into() {
+            Ok(res) => Ok(Hand::from(&res)),
+            Err(_) => Err(HandParseError::WrongNumberOfElements(size)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::cards::*;
@@ -149,55 +164,13 @@ mod tests {
 
     #[test]
     fn groups() {
-        let hand = Hand::from([
-            Card {
-                rank: Rank::Two,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Four,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Four,
-                suit: Suit::Clubs,
-            },
-            Card {
-                rank: Rank::Five,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Six,
-                suit: Suit::Diamonds,
-            },
-        ]);
+        let hand = "2d,4d,4c,5d,6d".parse::<Hand>().expect("bad parse");
         assert_eq!(hand.hand_type(), HandType::Pair(Rank::Four));
 
-        let hand = Hand::from([
-            Card {
-                rank: Rank::Two,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Four,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Four,
-                suit: Suit::Clubs,
-            },
-            Card {
-                rank: Rank::Five,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Five,
-                suit: Suit::Spades,
-            },
-        ]);
+        let hand = "2d,4d,4c,5d,5s".parse::<Hand>().expect("bad parse");
         assert_eq!(hand.hand_type(), HandType::TwoPair(Rank::Five, Rank::Four));
 
-        let hand = Hand::from([
+        let hand = Hand::from(&[
             Card {
                 rank: Rank::Four,
                 suit: Suit::Hearts,
@@ -224,7 +197,7 @@ mod tests {
             HandType::FullHouse(Rank::Four, Rank::Five)
         );
 
-        let hand = Hand::from([
+        let hand = Hand::from(&[
             Card {
                 rank: Rank::Four,
                 suit: Suit::Hearts,
@@ -251,7 +224,7 @@ mod tests {
 
     #[test]
     fn straight() {
-        let hand = Hand::from([
+        let hand = Hand::from(&[
             Card {
                 rank: Rank::Two,
                 suit: Suit::Diamonds,
@@ -275,7 +248,7 @@ mod tests {
         ]);
         assert_eq!(hand.hand_type(), HandType::StraightFlush(Rank::Six));
 
-        let hand = Hand::from([
+        let hand = Hand::from(&[
             Card {
                 rank: Rank::Two,
                 suit: Suit::Diamonds,
@@ -297,9 +270,9 @@ mod tests {
                 suit: Suit::Diamonds,
             },
         ]);
-        assert!(hand.is_straight());
+        assert_eq!(hand.hand_type(), HandType::StraightFlush(Rank::Five));
 
-        let hand = Hand::from([
+        let hand = Hand::from(&[
             Card {
                 rank: Rank::Two,
                 suit: Suit::Diamonds,
@@ -321,9 +294,9 @@ mod tests {
                 suit: Suit::Diamonds,
             },
         ]);
-        assert!(!hand.is_straight());
+        assert_eq!(hand.hand_type(), HandType::Flush);
 
-        let hand = Hand::from([
+        let hand = Hand::from(&[
             Card {
                 rank: Rank::Two,
                 suit: Suit::Diamonds,
@@ -345,9 +318,9 @@ mod tests {
                 suit: Suit::Diamonds,
             },
         ]);
-        assert!(!hand.is_straight());
+        assert_eq!(hand.hand_type(), HandType::Flush);
 
-        let hand = Hand::from([
+        let hand = Hand::from(&[
             Card {
                 rank: Rank::Two,
                 suit: Suit::Diamonds,
@@ -366,12 +339,12 @@ mod tests {
             },
             Card {
                 rank: Rank::Ace,
-                suit: Suit::Diamonds,
+                suit: Suit::Clubs,
             },
         ]);
-        assert!(!hand.is_straight());
+        assert_eq!(hand.hand_type(), HandType::Pair(Rank::Ace));
 
-        let hand = Hand::from([
+        let hand = Hand::from(&[
             Card {
                 rank: Rank::Ace,
                 suit: Suit::Diamonds,
@@ -393,57 +366,15 @@ mod tests {
                 suit: Suit::Diamonds,
             },
         ]);
-        assert!(hand.is_straight());
+        assert_eq!(hand.hand_type(), HandType::StraightFlush(Rank::Ace))
     }
 
     #[test]
     fn flush() {
-        let hand = Hand::from([
-            Card {
-                rank: Rank::Two,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Four,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Three,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Five,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Six,
-                suit: Suit::Diamonds,
-            },
-        ]);
-        assert!(hand.is_flush());
+        let hand = "2d,4d,3d,5d,6d".parse::<Hand>().expect("bad parse");
+        assert_eq!(hand.hand_type(), HandType::StraightFlush(Rank::Six));
 
-        let hand = Hand::from([
-            Card {
-                rank: Rank::Two,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Four,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Three,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Five,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Six,
-                suit: Suit::Clubs,
-            },
-        ]);
-        assert!(!hand.is_flush());
+        let hand = "2d,4d,3d,5d,6c".parse::<Hand>().expect("bad parse");
+        assert_eq!(hand.hand_type(), HandType::Straight(Rank::Six));
     }
 }

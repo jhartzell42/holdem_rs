@@ -4,7 +4,9 @@ use num_traits::FromPrimitive;
 use rand::{seq::SliceRandom, thread_rng};
 use std::fmt;
 use std::fmt::Display;
+use std::str::FromStr;
 use strum::{EnumIter, IntoEnumIterator};
+use thiserror::Error;
 
 #[derive(Clone, Debug)]
 pub struct Deck(pub Vec<Card>);
@@ -42,6 +44,40 @@ impl Card {
 impl Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}{}", self.rank, self.suit)
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum CardParseError {
+    #[error("error parsing rank: {0}")]
+    RankParseError(#[from] RankParseError),
+
+    #[error("error parsing suit: {0}")]
+    SuitParseError(#[from] SuitParseError),
+
+    #[error("insufficient length")]
+    IncompleteError,
+}
+
+impl FromStr for Card {
+    type Err = CardParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if s.len() < 2 {
+            return Err(CardParseError::IncompleteError);
+        }
+
+        let (rank_str, suit_str) = if &s[0..2] == "10" {
+            s.split_at(2)
+        } else {
+            s.split_at(1)
+        };
+
+        let rank = rank_str.parse::<Rank>()?;
+        let suit = suit_str.parse::<Suit>()?;
+
+        Ok(Card { rank, suit })
     }
 }
 
@@ -89,6 +125,35 @@ impl Display for Rank {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum RankParseError {
+    #[error("invalid rank: {0}")]
+    InvalidRank(String),
+}
+
+impl FromStr for Rank {
+    type Err = RankParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "2" => Ok(Rank::Two),
+            "3" => Ok(Rank::Three),
+            "4" => Ok(Rank::Four),
+            "5" => Ok(Rank::Five),
+            "6" => Ok(Rank::Six),
+            "7" => Ok(Rank::Seven),
+            "8" => Ok(Rank::Eight),
+            "9" => Ok(Rank::Nine),
+            "10" => Ok(Rank::Ten),
+            "J" | "j" => Ok(Rank::Jack),
+            "Q" | "q" => Ok(Rank::Queen),
+            "K" | "k" => Ok(Rank::King),
+            "A" | "a" => Ok(Rank::Ace),
+            _ => Err(RankParseError::InvalidRank(s.to_string())),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Debug, EnumIter, Eq)]
 pub enum Suit {
     Hearts,
@@ -106,5 +171,39 @@ impl Display for Suit {
             Suit::Diamonds => "♦",
         };
         write!(f, "{name}")
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum SuitParseError {
+    #[error("invalid suit: {0}")]
+    InvalidSuit(String),
+}
+
+impl FromStr for Suit {
+    type Err = SuitParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "♥" | "h" | "H" => Ok(Suit::Hearts),
+            "♣" | "c" | "C" => Ok(Suit::Clubs),
+            "♠" | "s" | "S" => Ok(Suit::Spades),
+            "♦" | "d" | "D" => Ok(Suit::Diamonds),
+            _ => Err(SuitParseError::InvalidSuit(s.to_string())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cards::*;
+
+    #[test]
+    fn parse_and_display() {
+        let card = "10d".parse::<Card>().expect("should not fail");
+        assert_eq!(format!("{card}"), "10♦");
+        let card = "AC\n".parse::<Card>().expect("should not fail");
+        assert_eq!(format!("{card}"), "A♣");
+        let card = "ac".parse::<Card>().expect("should not fail");
+        assert_eq!(format!("{card}"), "A♣");
     }
 }

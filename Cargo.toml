@@ -11,3 +11,4 @@ num-derive = "0.4.1"
 num-traits = "0.2.17"
 rand = "0.8.5"
 strum = { version = "0.25.0", features = ["derive"] }
+thiserror = "1.0.56"
