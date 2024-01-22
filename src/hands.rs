@@ -33,16 +33,17 @@ impl Hand {
         &self.0
     }
 
-    pub fn best_hand(cards: &[Card]) -> Option<Self> {
+    pub fn best_hand(cards: &[Card]) -> Self {
         cards
             .iter()
             .cloned()
-            .permutations(5)
+            .combinations(5)
             .map(|mut perm| {
                 perm.sort_by(|a, b| b.cmp(a));
                 Hand(perm.try_into().expect("size should be 5"))
             })
             .max()
+            .expect("at least five cards must be provided")
     }
 
     pub fn hand_type(&self) -> HandType {
@@ -344,28 +345,7 @@ mod tests {
         ]);
         assert_eq!(hand.hand_type(), HandType::Pair(Rank::Ace));
 
-        let hand = Hand::from(&[
-            Card {
-                rank: Rank::Ace,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Queen,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Jack,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::King,
-                suit: Suit::Diamonds,
-            },
-            Card {
-                rank: Rank::Ten,
-                suit: Suit::Diamonds,
-            },
-        ]);
+        let hand = "ad,qd,jd,kd,10d".parse::<Hand>().expect("bad parse");
         assert_eq!(hand.hand_type(), HandType::StraightFlush(Rank::Ace))
     }
 
